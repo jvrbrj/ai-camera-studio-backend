@@ -7,8 +7,8 @@ import httpx
 
 app = FastAPI(title="AI Camera Studio Backend", version="3.2")
 
-# 🔑 REEMPLAZA "r8_AQUI_VA_TU_TOKEN_REAL_DE_REPLICATE" con tu token real de Replicate
-REPLICATE_API_TOKEN = "r8_12345abcdef"
+# 🔑 Puedes poner tu token real aquí entre las comillas O configurarlo en el panel de Render
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "r8_TU_TOKEN_REAL_AQUI")
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
