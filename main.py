@@ -5,7 +5,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import httpx
 
-app = FastAPI(title="AI Camera Studio Backend", version="3.6")
+app = FastAPI(title="AI Camera Studio Backend", version="3.7")
 
 # 🛡️ El token se lee de forma segura desde la variable de entorno configurada en Render
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
@@ -49,7 +49,7 @@ async def process_media(
         # Crear cliente explícito con el token seguro de la variable de entorno
         client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-        # Ejecutar modelo en Replicate
+        # Ejecutar modelo en Replicate usando versiones dinámicas
         if output_type == "video":
             output = client.run(
                 "stability-ai/stable-video-diffusion:3f0457e4619daac512030b4759de3fc3eb5a9bcd34751f2a306f10df54d2d213",
@@ -61,8 +61,12 @@ async def process_media(
             )
             file_ext = "mp4"
         else:
+            # Búsqueda dinámica de la versión oficial más reciente de SDXL
+            model = client.models.get("stability-ai/sdxl")
+            version = model.versions.list()[0]
+            
             output = client.run(
-                "stability-ai/sdxl",
+                version,
                 input={
                     "image": image_url,
                     "prompt": prompt,
