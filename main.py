@@ -5,7 +5,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import httpx
 
-app = FastAPI(title="AI Camera Studio Backend", version="2.0")
+app = FastAPI(title="AI Camera Studio Backend", version="2.5")
 
 # Directorio temporal para almacenar la foto capturada por el Moto G15
 UPLOAD_DIR = "/tmp/ai_media"
@@ -33,7 +33,7 @@ async def process_media(
         print(f"✨ Prompt de IA: {prompt}")
         print(f"🎬 Tipo de salida: {output_type}")
 
-        # 2. Subir temporalmente la imagen a un servicio temporal para que Replicate pueda leerla
+        # 2. Subir temporalmente la imagen a un servicio temporal para que Replicate pueda leerla por URL
         image_url = await upload_to_temp_host(input_file_path)
 
         # 3. Ejecutar el modelo en Replicate según lo que pida el usuario
@@ -62,14 +62,14 @@ async def process_media(
             result_url = output[0] if isinstance(output, list) else output
             file_ext = "jpg"
 
-        # 4. Descargar el resultado procesado
+        # 4. Descargar el resultado procesado devuelto por Replicate
         output_file_path = os.path.join(UPLOAD_DIR, f"result.{file_ext}")
         async with httpx.AsyncClient() as client:
             res = await client.get(result_url)
             with open(output_file_path, "wb") as f:
                 f.write(res.content)
 
-        # 5. Enviar el archivo final de regreso a la app en Flutter
+        # 5. Enviar el archivo final de regreso a la aplicación en Flutter
         return FileResponse(
             output_file_path,
             media_type="video/mp4" if output_type == "video" else "image/jpeg",
