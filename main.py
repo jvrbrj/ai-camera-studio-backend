@@ -1,118 +1,57 @@
-from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
+import os
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import shutil
-import os
-import uuid
-import torch
-from PIL import Image
-from diffusers import StableDiffusionImg2ImgPipeline, DPMSolverMultistepScheduler
 
-app = FastAPI(title="AI Camera Studio - Cloud Engine")
+app = FastAPI(title="AI Camera Studio Backend", version="1.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# En Hugging Face Spaces, el sistema de archivos de escritura obligatoria es /tmp
-UPLOAD_DIR = "/tmp/uploads"
-OUTPUT_DIR = "/tmp/outputs"
+# Directorio temporal para procesar archivos
+UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-print("🔄 Cargando modelo de Stable Diffusion en la nube...")
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"💻 Dispositivo asignado en Hugging Face: {device.upper()}")
-
-try:
-  dtype = torch.float16 if device == "cuda" else torch.float32
-
-  # Usamos Stable Diffusion v1.5 optimizado para Img2Img
-  pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
-      "runwayml/stable-diffusion-v1-5",
-      torch_dtype=dtype,
-      safety_checker=None,
-  )
-  pipe = pipe.to(device)
-  
-  # Scheduler rápido para agilizar las respuestas en la nube
-  pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-
-  if device == "cuda":
-    pipe.enable_attention_slicing()
-
-  print("✅ ¡Modelo cargado con éxito en el servidor cloud!")
-except Exception as e:
-  print(f"⚠️ Error al inicializar el modelo de IA: {e}")
-  pipe = None
-
 
 @app.get("/")
-def home():
-  return {
-      "status": "online",
-      "message": "Backend de AI Camera Studio operando en la nube.",
-      "ai_loaded": pipe is not None,
-      "device": device,
-  }
-
+def read_root():
+    """Endpoint de verificación para saber si el servidor está activo."""
+    return {"status": "online", "message": "AI Camera Studio Backend funcionando correctamente"}
 
 @app.post("/process-media")
 async def process_media(
     file: UploadFile = File(...),
     prompt: str = Form(...),
+    output_type: str = Form("image")
 ):
-  try:
-    file_extension = os.path.splitext(file.filename)[1] or ".jpg"
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
-    input_path = os.path.join(UPLOAD_DIR, unique_filename)
+    """
+    Recibe la imagen de la cámara o galería, el texto/voz del usuario 
+    y el tipo de salida ('image' o 'video').
+    """
+    try:
+        # 1. Guardar la imagen recibida temporalmente
+        input_file_path = os.path.join(UPLOAD_DIR, file.filename or "input.jpg")
+        with open(input_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    with open(input_path, "wb") as buffer:
-      shutil.copyfileobj(file.file, buffer)
+        print(f"Imagen recibida: {input_file_path}")
+        print(f"Prompt de IA recibido: {prompt}")
+        print(f"Tipo de salida solicitado: {output_type}")
 
-    print(f"📸 Imagen recibida: {unique_filename} | Prompt: '{prompt}'")
+        # ==========================================
+        # 💡 AQUÍ INTEGRARÁS TU MODELO DE IA O STABLE DIFFUSION
+        # ==========================================
+        # Por ahora, simularemos la respuesta devolviendo la misma imagen 
+        # (o puedes generar/procesar el resultado deseado).
+        
+        output_file_path = input_file_path # Reemplaza esto con la ruta de tu resultado real procesado por IA
 
-    output_filename = f"gen_{uuid.uuid4()}.jpg"
-    output_path = os.path.join(OUTPUT_DIR, output_filename)
+        if not os.path.exists(output_file_path):
+            raise HTTPException(status_code=500, detail="No se pudo generar el archivo multimedia con IA.")
 
-    if pipe is not None:
-      print("🎨 Ejecutando inferencia de IA...")
-      init_image = Image.open(input_path).convert("RGB")
-      init_image = init_image.resize((512, 512))
+        # 2. Devolver el archivo procesado (imagen o video) de vuelta a la app
+        return FileResponse(
+            output_file_path, 
+            media_type="video/mp4" if output_type == "video" else "image/jpeg",
+            filename="result.mp4" if output_type == "video" else "result.jpg"
+        )
 
-      # Reducimos a 15 pasos para una respuesta veloz y estable en la nube
-      generated_image = pipe(
-          prompt=prompt,
-          image=init_image,
-          strength=0.55,
-          num_inference_steps=15,
-          guidance_scale=7.5,
-      ).images[0]
-
-      generated_image.save(output_path)
-      print("✨ ¡Generación completada!")
-    else:
-      shutil.copyfile(input_path, output_path)
-
-    return {
-        "status": "success",
-        "message": "¡Transformación con IA completada en la nube!",
-        "prompt_recibido": prompt,
-        "result_url": f"/download/{output_filename}",
-    }
-
-  except Exception as e:
-    print(f"❌ Error interno: {str(e)}")
-    return {"status": "error", "message": str(e)}
-
-
-@app.get("/download/{filename}")
-async def download_result(filename: str):
-  file_path = os.path.join(OUTPUT_DIR, filename)
-  if os.path.exists(file_path):
-    return FileResponse(file_path)
-  return {"error": "Archivo no encontrado"}
+    except Exception as e:
+        print(f"Error procesando la solicitud: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
