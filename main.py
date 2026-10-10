@@ -5,10 +5,10 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import httpx
 
-# 🔑 INYECTA TU TOKEN AQUÍ DIRECTAMENTE PARA EVITAR EL ERROR 401
-os.environ["REPLICATE_API_TOKEN"] = "r8_TU_TOKEN_REAL_DE_REPLICATE_AQUI"
+app = FastAPI(title="AI Camera Studio Backend", version="3.1")
 
-app = FastAPI(title="AI Camera Studio Backend", version="3.0")
+# 🔑 ESCRIBE AQUÍ TU TOKEN REAL DE REPLICATE (ejemplo: "r8_abc123xyz...")
+REPLICATE_API_TOKEN = "r8_TU_TOKEN_REAL_AQUI"
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -38,9 +38,12 @@ async def process_media(
         image_url = await upload_to_temp_host(input_file_path)
         print(f"🌐 URL pública temporal: {image_url}")
 
-        # Ejecutar modelo en Replicate
+        # 🛡️ Crear cliente explícito con tu token para evitar errores 401
+        client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+
+        # Ejecutar modelo en Replicate usando el cliente explícito
         if output_type == "video":
-            output = replicate.run(
+            output = client.run(
                 "stability-ai/stable-video-diffusion:3f0457e4619daac512030b4759de3fc3eb5a9bcd34751f2a306f10df54d2d213",
                 input={
                     "input_image": image_url,
@@ -50,7 +53,7 @@ async def process_media(
             )
             file_ext = "mp4"
         else:
-            output = replicate.run(
+            output = client.run(
                 "stability-ai/sdxl:39ed62f2a79043531b1a0fe3b88c9fef9ba157648c49d43f2ff15f00c702ef8d",
                 input={
                     "image": image_url,
@@ -70,8 +73,8 @@ async def process_media(
         print(f"🎨 Resultado obtenido de Replicate: {result_url}")
 
         output_file_path = os.path.join(UPLOAD_DIR, f"result.{file_ext}")
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            res = await client.get(result_url)
+        async with httpx.AsyncClient(timeout=60.0) as client_http:
+            res = await client_http.get(result_url)
             if res.status_code != 200:
                 raise Exception(f"No se pudo descargar el archivo resultante (Status: {res.status_code})")
             with open(output_file_path, "wb") as f:
@@ -89,9 +92,9 @@ async def process_media(
         raise HTTPException(status_code=500, detail=f"Error en servidor: {error_detail}")
 
 async def upload_to_temp_host(file_path: str) -> str:
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client_http:
         with open(file_path, "rb") as f:
-            response = await client.post("https://tmpfiles.org/api/v1/upload", files={"file": f})
+            response = await client_http.post("https://tmpfiles.org/api/v1/upload", files={"file": f})
             if response.status_code == 200:
                 data = response.json()
                 if "data" in data and "url" in data["data"]:
