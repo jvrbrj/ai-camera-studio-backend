@@ -77,8 +77,10 @@ async def process_media(
         )
 
     except Exception as e:
-        print(f"❌ Error en el procesamiento de IA: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error de IA: {str(e)}")
+        error_msg = str(e)
+        print(f"❌ Error detallado en el backend: {error_msg}")
+        # Esto le enviará el error real a tu Flutter para que lo veas en el SnackBar
+        raise HTTPException(status_code=500, detail=f"Error interno: {error_msg}")
 
 async def upload_to_temp_host(file_path: str) -> str:
     """Sube la imagen a un servicio temporal gratuito para que Replicate pueda leerla por URL."""
