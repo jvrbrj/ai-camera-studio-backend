@@ -5,10 +5,10 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 import httpx
 
-app = FastAPI(title="AI Camera Studio Backend", version="3.3")
+app = FastAPI(title="AI Camera Studio Backend", version="3.4")
 
-# 🔑 PEGA TU TOKEN REAL AQUÍ (ejemplo: "r8_12345abcdef...")
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "r8_TU_TOKEN_REAL_AQUI")
+# 🛡️ El token se lee de forma segura desde la variable de entorno configurada en Render
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -24,6 +24,10 @@ async def process_media(
     output_type: str = Form("image")
 ):
     try:
+        # Validación de seguridad del token antes de procesar
+        if not REPLICATE_API_TOKEN:
+            raise HTTPException(status_code=500, detail="Error de configuración: REPLICATE_API_TOKEN no está definido en las variables de entorno.")
+
         input_filename = file.filename or "input.jpg"
         input_file_path = os.path.join(UPLOAD_DIR, input_filename)
         
@@ -34,17 +38,18 @@ async def process_media(
         print(f"✨ Prompt de IA: {prompt}")
         print(f"🎬 Tipo de salida: {output_type}")
 
-        # 🔍 DIAGNÓSTICO: Esto imprimirá en Render cómo llega el token (muestra solo los primeros caracteres por seguridad)
+        # 🔍 DIAGNÓSTICO: Verifica el estado del token de manera segura en los logs de Render
         token_preview = REPLICATE_API_TOKEN[:5] if REPLICATE_API_TOKEN else "VACIO"
-        print(f"🔑 Diagnóstico Token -> Longitud: {len(REPLICATE_API_TOKEN)}, Inicia con: {token_preview}...")
+        print(f"🔑 Diagnóstico Token -> Longitud: {len(REPLICATE_API_TOKEN) if REPLICATE_API_TOKEN else 0}, Inicia con: {token_preview}...")
 
-        # Subir imagen a host temporal
+        # Subir imagen a host temporal para que Replicate pueda leerla
         image_url = await upload_to_temp_host(input_file_path)
         print(f"🌐 URL pública temporal: {image_url}")
 
-        # Crear cliente explícito con tu token
+        # Crear cliente explícito con el token seguro de la variable de entorno
         client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
+        # Ejecutar modelo en Replicate usando el cliente explícito
         if output_type == "video":
             output = client.run(
                 "stability-ai/stable-video-diffusion:3f0457e4619daac512030b4759de3fc3eb5a9bcd34751f2a306f10df54d2d213",
@@ -68,6 +73,7 @@ async def process_media(
             )
             file_ext = "jpg"
 
+        # Extraer la URL del resultado de forma segura
         if isinstance(output, list) and len(output) > 0:
             result_url = str(output[0])
         else:
@@ -75,6 +81,7 @@ async def process_media(
 
         print(f"🎨 Resultado obtenido de Replicate: {result_url}")
 
+        # Descargar el archivo procesado resultante
         output_file_path = os.path.join(UPLOAD_DIR, f"result.{file_ext}")
         async with httpx.AsyncClient(timeout=60.0) as client_http:
             res = await client_http.get(result_url)
@@ -83,6 +90,7 @@ async def process_media(
             with open(output_file_path, "wb") as f:
                 f.write(res.content)
 
+        # Retornar el archivo procesado a la aplicación en Flutter
         return FileResponse(
             output_file_path,
             media_type="video/mp4" if output_type == "video" else "image/jpeg",
@@ -95,6 +103,7 @@ async def process_media(
         raise HTTPException(status_code=500, detail=f"Error en servidor: {error_detail}")
 
 async def upload_to_temp_host(file_path: str) -> str:
+    """Sube la imagen a un servicio temporal para generar la URL pública accesible por Replicate."""
     async with httpx.AsyncClient(timeout=30.0) as client_http:
         with open(file_path, "rb") as f:
             response = await client_http.post("https://tmpfiles.org/api/v1/upload", files={"file": f})
