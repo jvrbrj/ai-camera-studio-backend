@@ -61,7 +61,7 @@ def home():
   }
 
 
-@app.post("/process-media/")
+@app.post("/process-media")
 async def process_media(
     file: UploadFile = File(...),
     prompt: str = Form(...),
