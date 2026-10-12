@@ -17,12 +17,28 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def read_root():
     return {"status": "online", "message": "AI Camera Studio Backend con Replicate activo"}
 
-@app.post("/process-media")
-async def process_media(
+from fastapi import FastAPI, Header, HTTPException
+
+# Ejemplo conceptual de cómo tu backend validaría al usuario
+@app.post("/process-media-secure")
+async def process_media_secure(
     file: UploadFile = File(...),
     prompt: str = Form(...),
-    output_type: str = Form("image")
+    output_type: str = Form("image"),
+    authorization: str = Header(None) # Aquí recibirás el token del usuario logueado
 ):
+    # 1. Validar que el usuario esté autenticado y tenga una suscripción activa
+    # (puedes consultar a la API de Google Play Developer para verificar el token de compra)
+    user_is_subscribed = await verify_google_play_subscription(authorization)
+    
+    if not user_is_subscribed:
+        raise HTTPException(
+            status_code=403, 
+            detail="Tu periodo de prueba ha expirado o no cuentas con una suscripción activa."
+        )
+    
+    # 2. Si pasa la validación, tu backend procesa la IA con normalidad...
+    ...
     try:
         # Validación de seguridad del token antes de procesar
         if not REPLICATE_API_TOKEN:
