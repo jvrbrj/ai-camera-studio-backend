@@ -1,136 +1,61 @@
 import os
 import shutil
-import replicate
+import httpx
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-import httpx
 
-app = FastAPI(title="AI Camera Studio Backend", version="3.7")
+app = FastAPI(title="AI Camera Studio Free Backend", version="4.0")
 
-# 🛡️ El token se lee de forma segura desde la variable de entorno configurada en Render
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+# Token gratuito de Hugging Face (puedes crear una cuenta gratis en huggingface.co)
+HF_TOKEN = os.getenv("HF_TOKEN")
+API_URL = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-@app.get("/")
-def read_root():
-    return {"status": "online", "message": "AI Camera Studio Backend con Replicate activo"}
-
-from fastapi import FastAPI, Header, HTTPException
-
-# Ejemplo conceptual de cómo tu backend validaría al usuario
-@app.post("/process-media-secure")
-async def process_media_secure(
+@app.post("/process-media")
+async def process_media(
     file: UploadFile = File(...),
     prompt: str = Form(...),
-    output_type: str = Form("image"),
-    authorization: str = Header(None) # Aquí recibirás el token del usuario logueado
+    output_type: str = Form("image")
 ):
-    # 1. Validar que el usuario esté autenticado y tenga una suscripción activa
-    # (puedes consultar a la API de Google Play Developer para verificar el token de compra)
-    user_is_subscribed = await verify_google_play_subscription(authorization)
-    
-    if not user_is_subscribed:
-        raise HTTPException(
-            status_code=403, 
-            detail="Tu periodo de prueba ha expirado o no cuentas con una suscripción activa."
-        )
-    
-    # 2. Si pasa la validación, tu backend procesa la IA con normalidad...
-    ...
     try:
-        # Validación de seguridad del token antes de procesar
-        if not REPLICATE_API_TOKEN:
-            raise HTTPException(status_code=500, detail="Error de configuración: REPLICATE_API_TOKEN no está definido en las variables de entorno.")
-
         input_filename = file.filename or "input.jpg"
         input_file_path = os.path.join(UPLOAD_DIR, input_filename)
         
         with open(input_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        print(f"📸 Imagen recibida: {input_file_path}")
-        print(f"✨ Prompt de IA: {prompt}")
-        print(f"🎬 Tipo de salida: {output_type}")
+        print(f"📸 Prompt realista recibido: {prompt}")
 
-        # 🔍 DIAGNÓSTICO: Verifica el estado del token de manera segura en los logs de Render
-        token_preview = REPLICATE_API_TOKEN[:5] if REPLICATE_API_TOKEN else "VACIO"
-        print(f"🔑 Diagnóstico Token -> Longitud: {len(REPLICATE_API_TOKEN) if REPLICATE_API_TOKEN else 0}, Inicia con: {token_preview}...")
+        # Petición al modelo gratuito de Stable Diffusion XL en Hugging Face
+        headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+        
+        # Combinamos el texto del usuario con directrices de fotorrealismo
+        full_prompt = f"{prompt}, realistic, highly detailed, cinematic lighting, 8k resolution"
 
-        # Subir imagen a host temporal para que Replicate pueda leerla
-        image_url = await upload_to_temp_host(input_file_path)
-        print(f"🌐 URL pública temporal: {image_url}")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            with open(input_file_path, "rb") as img_file:
+                response = await client.post(
+                    API_URL,
+                    headers=headers,
+                    files={"image": img_file},
+                    data={"inputs": full_prompt}
+                )
 
-        # Crear cliente explícito con el token seguro de la variable de entorno
-        client = replicate.Client(api_token=REPLICATE_API_TOKEN)
+            if response.status_code != 200:
+                raise HTTPException(status_code=500, detail=f"Error en IA gratuita: {response.text}")
 
-        # Ejecutar modelo en Replicate usando versiones dinámicas
-        if output_type == "video":
-            output = client.run(
-                "stability-ai/stable-video-diffusion:3f0457e4619daac512030b4759de3fc3eb5a9bcd34751f2a306f10df54d2d213",
-                input={
-                    "input_image": image_url,
-                    "video_length": "14_frames_with_svd",
-                    "fps": 6
-                }
-            )
-            file_ext = "mp4"
-        else:
-            # Búsqueda dinámica de la versión oficial más reciente de SDXL
-            model = client.models.get("stability-ai/sdxl")
-            version = model.versions.list()[0]
-            
-            output = client.run(
-                version,
-                input={
-                    "image": image_url,
-                    "prompt": prompt,
-                    "negative_prompt": "blurry, low quality, distorted",
-                    "image_strength": 0.45,
-                    "num_outputs": 1
-                }
-            )
-            file_ext = "jpg"
-
-        # Extraer la URL del resultado de forma segura
-        if isinstance(output, list) and len(output) > 0:
-            result_url = str(output[0])
-        else:
-            result_url = str(output)
-
-        print(f"🎨 Resultado obtenido de Replicate: {result_url}")
-
-        # Descargar el archivo procesado resultante
-        output_file_path = os.path.join(UPLOAD_DIR, f"result.{file_ext}")
-        async with httpx.AsyncClient(timeout=60.0) as client_http:
-            res = await client_http.get(result_url)
-            if res.status_code != 200:
-                raise Exception(f"No se pudo descargar el archivo resultante (Status: {res.status_code})")
+            output_file_path = os.path.join(UPLOAD_DIR, "result.jpg")
             with open(output_file_path, "wb") as f:
-                f.write(res.content)
+                f.write(response.content)
 
-        # Retornar el archivo procesado a la aplicación en Flutter
         return FileResponse(
             output_file_path,
-            media_type="video/mp4" if output_type == "video" else "image/jpeg",
-            filename=f"ai_result.{file_ext}"
+            media_type="image/jpeg",
+            filename="ai_result.jpg"
         )
 
     except Exception as e:
-        error_detail = str(e)
-        print(f"❌ Error interno crítico: {error_detail}")
-        raise HTTPException(status_code=500, detail=f"Error en servidor: {error_detail}")
-
-async def upload_to_temp_host(file_path: str) -> str:
-    """Sube la imagen a un servicio temporal para generar la URL pública accesible por Replicate."""
-    async with httpx.AsyncClient(timeout=30.0) as client_http:
-        with open(file_path, "rb") as f:
-            response = await client_http.post("https://tmpfiles.org/api/v1/upload", files={"file": f})
-            if response.status_code == 200:
-                data = response.json()
-                if "data" in data and "url" in data["data"]:
-                    download_url = data["data"]["url"]
-                    direct_url = download_url.replace("tmpfiles.org/", "tmpfiles.org/dl/")
-                    return direct_url
-    raise Exception("Fallo al subir la imagen al host temporal.")
+        print(f"❌ Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
