@@ -1,17 +1,18 @@
 import os
 import shutil
+import urllib.parse
+import httpx
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from PIL import Image, ImageEnhance
 
-app = FastAPI(title="AI Camera Studio Local Engine", version="6.0")
+app = FastAPI(title="AI Camera Studio Public AI Engine", version="7.0")
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "Motor Local de AI Camera Studio Activo y Veloz"}
+    return {"status": "online", "message": "Motor de IA Pública Activo"}
 
 @app.post("/process-media")
 async def process_media(
@@ -27,27 +28,29 @@ async def process_media(
         with open(input_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        print(f"📸 Imagen recibida: {input_file_path}")
-        print(f"✨ Prompt aplicado: {prompt}")
+        print(f"📸 Imagen de referencia recibida: {input_file_path}")
+        print(f"✨ Generando con IA pública el prompt: {prompt}")
 
-        # Procesamiento visual local avanzado de alta velocidad
-        img = Image.open(input_file_path).convert("RGB")
+        # Enriquecer el prompt para asegurar un resultado fotorrealista y cinematográfico
+        full_prompt = f"{prompt}, photorealistic, 8k resolution, cinematic lighting, highly detailed masterpiece"
         
-        # 1. Contraste dramático y cinematográfico
-        enhancer_contrast = ImageEnhance.Contrast(img)
-        img = enhancer_contrast.enhance(1.35)
+        # Codificar el prompt para que sea compatible con una URL web
+        encoded_prompt = urllib.parse.quote(full_prompt)
         
-        # 2. Ajuste de color (tonos fríos/profundos)
-        enhancer_color = ImageEnhance.Color(img)
-        img = enhancer_color.enhance(0.85)
-        
-        # 3. Nitidez mejorada para resaltar detalles
-        enhancer_sharpness = ImageEnhance.Sharpness(img)
-        img = enhancer_sharpness.enhance(1.6)
-        
-        # Guardar imagen procesada
-        img.save(output_file_path, "JPEG", quality=95)
-        print("✅ Procesamiento visual local completado con éxito.")
+        # URL de la IA pública gratuita (genera imágenes directas por URL sin tokens)
+        ai_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+
+        # Descargar la imagen generada por la IA
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.get(ai_url)
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=500, detail="Error al generar imagen con la IA pública")
+            
+            with open(output_file_path, "wb") as f:
+                f.write(response.content)
+
+        print("✅ ¡Imagen generada e interpretada por la IA con éxito!")
 
         return FileResponse(
             output_file_path,
@@ -57,5 +60,5 @@ async def process_media(
 
     except Exception as e:
         error_detail = str(e)
-        print(f"❌ Error interno: {error_detail}")
+        print(f"❌ Error en servidor: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Error en servidor: {error_detail}")
