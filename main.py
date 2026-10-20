@@ -6,7 +6,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from PIL import Image, ImageEnhance
 
-app = FastAPI(title="AI Camera Studio - Hybrid Backend", version="9.0")
+app = FastAPI(title="AI Camera Studio - Hybrid Backend", version="9.1")
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -117,3 +117,19 @@ async def process_ai(
         error_detail = str(e)
         print(f"❌ Error en motor IA: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Error en servidor: {error_detail}")
+
+
+# ---------------------------------------------------------
+# RUTA 3: Compatibilidad Retroactiva (/process-media)
+# ---------------------------------------------------------
+@app.post("/process-media")
+async def compat_process_media(
+    file: UploadFile = File(...),
+    prompt: str = Form(None),
+    output_type: str = Form("image")
+):
+    # Si la app manda un prompt de texto, lo procesa la IA; si no, el filtro local
+    if prompt and len(prompt.strip()) > 2:
+        return await process_ai(file=file, prompt=prompt)
+    else:
+        return await process_filter(file=file, style="cinematic")
