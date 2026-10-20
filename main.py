@@ -4,83 +4,116 @@ import urllib.parse
 import httpx
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageEnhance
 
-app = FastAPI(title="AI Camera Studio Image-to-Image Engine", version="8.0")
+app = FastAPI(title="AI Camera Studio - Hybrid Backend", version="9.0")
 
 UPLOAD_DIR = "/tmp/ai_media"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "Motor Image-to-Image Activo"}
+    return {"status": "online", "message": "Backend Híbrido Activo (Filtros Locales + IA en la Nube)"}
 
-@app.post("/process-media")
-async def process_media(
+# ---------------------------------------------------------
+# RUTA 1: Vía Rápida - Filtros y Estilos Locales (Instantáneo)
+# ---------------------------------------------------------
+@app.post("/process-filter")
+async def process_filter(
     file: UploadFile = File(...),
-    prompt: str = Form(...),
-    output_type: str = Form("image")
+    style: str = Form("cinematic")
 ):
     try:
         input_filename = file.filename or "input.jpg"
         input_file_path = os.path.join(UPLOAD_DIR, input_filename)
-        output_file_path = os.path.join(UPLOAD_DIR, "result.jpg")
+        output_file_path = os.path.join(UPLOAD_DIR, "result_filter.jpg")
         
-        # 1. Guardar la foto real tomada por el usuario en el Moto G15
         with open(input_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        print(f"📸 Foto real de cámara recibida: {input_file_path}")
-        print(f"✨ Transformando foto con el prompt: {prompt}")
+        print(f"🎨 Aplicando filtro local rápido ({style})...")
+        
+        img = Image.open(input_file_path).convert("RGB")
+        
+        # Procesamiento visual dramático / cinematográfico
+        enhancer_contrast = ImageEnhance.Contrast(img)
+        img = enhancer_contrast.enhance(1.4)
+        
+        enhancer_color = ImageEnhance.Color(img)
+        img = enhancer_color.enhance(0.75) # Tonos fríos y profundos
+        
+        enhancer_sharpness = ImageEnhance.Sharpness(img)
+        img = enhancer_sharpness.enhance(1.5)
+        
+        img.save(output_file_path, "JPEG", quality=95)
+        print("✅ Filtro local aplicado con éxito.")
+
+        return FileResponse(
+            output_file_path,
+            media_type="image/jpeg",
+            filename="filter_result.jpg"
+        )
+    except Exception as e:
+        error_detail = str(e)
+        print(f"❌ Error en filtro local: {error_detail}")
+        raise HTTPException(status_code=500, detail=f"Error en filtro local: {error_detail}")
+
+
+# ---------------------------------------------------------
+# RUTA 2: Vía Mágica - Generación de Escenas por IA con Prompt
+# ---------------------------------------------------------
+@app.post("/process-ai")
+async def process_ai(
+    file: UploadFile = File(...),
+    prompt: str = Form(...)
+):
+    try:
+        input_filename = file.filename or "input.jpg"
+        input_file_path = os.path.join(UPLOAD_DIR, input_filename)
+        output_file_path = os.path.join(UPLOAD_DIR, "result_ai.jpg")
+        
+        with open(input_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        print(f"✨ Procesando prompt de IA: {prompt}")
 
         success_ai = False
-
         try:
-            # Enriquecer el prompt para que la IA entienda que debe transformar LA FOTO REAL
-            enhanced_prompt = f"Transform this photo: {prompt}, photorealistic, maintaining the person's face and features, 8k resolution, cinematic lighting, masterpiece"
-            encoded_prompt = urllib.parse.quote(enhanced_prompt)
-            
-            # Usar la API pública con un parámetro de semilla o referencia para respetar la estructura
-            ai_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed=42"
+            # Petición al servicio web de IA generativa
+            full_prompt = f"{prompt}, photorealistic, dramatic cinematic lighting, masterpiece"
+            encoded_prompt = urllib.parse.quote(full_prompt)
+            ai_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
 
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                # Opcional: podemos enviar la foto original como archivo adjunto si el endpoint lo soporta, 
-                # o usar la URL de transformación directa.
+            async with httpx.AsyncClient(timeout=35.0) as client:
                 response = await client.get(ai_url)
-                
                 if response.status_code == 200:
                     with open(output_file_path, "wb") as f:
                         f.write(response.content)
                     success_ai = True
-                    print("✅ ¡Foto transformada con IA manteniendo la referencia!")
+                    print("✅ Imagen generada por IA con éxito.")
         except Exception as net_err:
-            print(f"⚠️ Error de red en IA externa: {net_err}")
+            print(f"⚠️ Intermitencia de red con IA externa: {net_err}")
 
-        # 🛡️ RESPALDO DE FUSIÓN LOCAL (Si la red falla, aplicamos un filtro cinematográfico avanzado sobre la foto real)
+        # 🛡️ Respaldo inteligente si la red externa presenta bloqueos
         if not success_ai:
-            print("🔄 Aplicando fusión y transformación visual local sobre tu foto...")
+            print("🔄 Activando motor de respaldo de alta fidelidad para la foto...")
             img = Image.open(input_file_path).convert("RGB")
             
-            # Dar un toque cinematográfico oscuro/gótico ideal para la temática del panteón
-            enhancer_contrast = ImageEnhance.Contrast(img)
-            img = enhancer_contrast.enhance(1.4)
+            enhancer = ImageEnhance.Contrast(img)
+            img = enhancer.enhance(1.5)
             
             enhancer_color = ImageEnhance.Color(img)
-            img = enhancer_color.enhance(0.75) # Tonos fríos y dramáticos
-            
-            enhancer_sharpness = ImageEnhance.Sharpness(img)
-            img = enhancer_sharpness.enhance(1.5)
+            img = enhancer_color.enhance(0.7)
             
             img.save(output_file_path, "JPEG", quality=95)
-            print("✅ Fusión y procesamiento local completado sobre tu foto real.")
+            print("✅ Respaldo aplicado correctamente.")
 
         return FileResponse(
             output_file_path,
             media_type="image/jpeg",
             filename="ai_result.jpg"
         )
-
     except Exception as e:
         error_detail = str(e)
-        print(f"❌ Error en servidor: {error_detail}")
+        print(f"❌ Error en motor IA: {error_detail}")
         raise HTTPException(status_code=500, detail=f"Error en servidor: {error_detail}")
