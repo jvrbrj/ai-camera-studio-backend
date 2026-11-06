@@ -5,7 +5,7 @@ import shutil
 import os
 import uuid
 
-app = FastAPI(title="AI Camera Studio Backend", version="1.0.0")
+app = FastAPI(title="AI Camera Studio Backend", version="1.1.0")
 
 UPLOAD_DIR = "uploads"
 PROCESSED_DIR = "processed"
@@ -13,10 +13,13 @@ PROCESSED_DIR = "processed"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-@app.post("/process-image")
-async def process_image(file: UploadFile = File(...), prompt: Form(default="Imaginación sin límites") = "Imaginación sin límites"):
+@app.post("/process-media")
+async def process_media(
+    file: UploadFile = File(...), 
+    prompt: Form(default="Imaginación sin límites") = "Imaginación sin límites"
+):
     try:
-        # Guardar imagen temporal de entrada
+        # 1. Guardar la foto original capturada por el usuario
         file_extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
         input_filename = f"{uuid.uuid4()}.{file_extension}"
         input_path = os.path.join(UPLOAD_DIR, input_filename)
@@ -24,36 +27,47 @@ async def process_image(file: UploadFile = File(...), prompt: Form(default="Imag
         with open(input_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        # Procesamiento con PIL (Simulación de fusión y estilo creativo)
-        img = Image.open(input_path)
-        draw = ImageDraw.Draw(img)
+        # 2. Cargar la imagen con PIL
+        user_image = Image.open(input_path).convert("RGBA")
         
-        # Añadir marcos cinematográficos superior e inferior
-        bar_height = 90
-        draw.rectangle([0, 0, img.width, bar_height], fill=(10, 10, 10))
-        draw.rectangle([0, img.height - bar_height, img.width, img.height], fill=(10, 10, 10))
+        # 3. Crear un lienzo de composición (Fondo temático basado en la imaginación)
+        # Mantenemos las proporciones de la foto del usuario asegurando visibilidad
+        width, height = user_image.size
         
-        # Título y lema estéticos
-        draw.text((30, 25), "AI CAMERA STUDIO — FOTOS CON IMAGINACIÓN", fill=(200, 200, 200))
+        # Creamos un marco cinematográfico y artístico que incluye la foto real al centro
+        canvas = Image.new("RGBA", (width, height + 160), (20, 20, 25, 255))
         
-        # Estampar la petición abierta del usuario en la parte inferior
-        display_prompt = f"Idea: {prompt}"
-        # Recortar texto si es muy largo visualmente
-        if len(display_prompt) > 85:
-            display_prompt = display_prompt[:82] + "..."
+        # Pegamos la foto original del usuario en el lienzo principal
+        canvas.paste(user_image, (0, 80))
+        
+        # 4. Dibujar la capa de "Fotos con Imaginación" y el Prompt personalizado
+        draw = ImageDraw.Draw(canvas)
+        
+        # Franja superior para el título de la app
+        draw.rectangle([0, 0, width, 75], fill=(10, 10, 15, 230))
+        draw.text((25, 25), "✨ AI CAMERA STUDIO — FOTOS CON IMAGINACIÓN", fill=(0, 229, 255))
+        
+        # Franja inferior para estampar la solicitud creativa del usuario (ej. Medusa en Egipto)
+        draw.rectangle([0, height + 80, width, height + 160], fill=(10, 10, 15, 230))
+        
+        display_prompt = f"Tema: {prompt}"
+        if len(display_prompt) > 65:
+            display_prompt = display_prompt[:62] + "..."
             
-        draw.text((30, img.height - 60), display_prompt, fill=(255, 215, 0)) # Tono dorado creativo
+        draw.text((25, height + 105), display_prompt, fill=(255, 215, 0)) # Color dorado creativo
         
-        # Guardar imagen procesada de salida
-        output_filename = f"processed_{input_filename}"
+        # 5. Guardar el resultado final fusionado
+        output_filename = f"fused_{input_filename}"
         output_path = os.path.join(PROCESSED_DIR, output_filename)
-        img.save(output_path, quality=95)
         
-        return FileResponse(output_path, media_type="image/jpeg", filename="foto_imaginacion.jpg")
+        final_image = canvas.convert("RGB")
+        final_image.save(output_path, quality=95)
+        
+        return FileResponse(output_path, media_type="image/jpeg", filename="foto_fusionada.jpg")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 def root():
-    return {"status": "AI Camera Studio Backend is running active."}
+    return {"status": "AI Camera Studio Backend (Fusión Activa) is running."}
