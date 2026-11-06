@@ -1,84 +1,59 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont
 import shutil
 import os
-import requests
 import uuid
-import random
 
-app = FastAPI()
+app = FastAPI(title="AI Camera Studio Backend", version="1.0.0")
 
-TEMP_DIR = "temp_media"
-os.makedirs(TEMP_DIR, exist_ok=True)
+UPLOAD_DIR = "uploads"
+PROCESSED_DIR = "processed"
 
-@app.post("/process-media")
-async def process_media(
-    prompt: str = Form(...),
-    file: UploadFile = File(...)
-) -> FileResponse:
-    input_path = os.path.join(TEMP_DIR, f"input_{uuid.uuid4()}.jpg")
-    output_path = os.path.join(TEMP_DIR, f"output_{uuid.uuid4()}.jpg")
-    bg_temp = os.path.join(TEMP_DIR, f"bg_{uuid.uuid4()}.jpg")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-    # 1. Guardar la foto real tomada desde tu Moto G55 5G
-    with open(input_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    print(f"✨ Creando escena compuesta para: {prompt}")
-
+@app.post("/process-image")
+async def process_image(file: UploadFile = File(...), prompt: Form(default="Imaginación sin límites") = "Imaginación sin límites"):
     try:
-        # 2. Generar el fondo temático con la IA (enfocándonos en el escenario y el personaje)
-        bg_prompt = f"A cinematic background of {prompt}, highly detailed, dramatic lighting, 8k resolution, empty scene"
-        seed = random.randint(1, 999999)
-        ai_url = f"https://image.pollinations.ai/prompt/{requests.utils.quote(bg_prompt)}?width=1024&height=1024&seed={seed}&nologo=true"
+        # Guardar imagen temporal de entrada
+        file_extension = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+        input_filename = f"{uuid.uuid4()}.{file_extension}"
+        input_path = os.path.join(UPLOAD_DIR, input_filename)
         
-        response = requests.get(ai_url, timeout=35)
+        with open(input_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # Procesamiento con PIL (Simulación de fusión y estilo creativo)
+        img = Image.open(input_path)
+        draw = ImageDraw.Draw(img)
         
-        if response.status_code == 200:
-            with open(bg_temp, "wb") as f:
-                f.write(response.content)
+        # Añadir marcos cinematográficos superior e inferior
+        bar_height = 90
+        draw.rectangle([0, 0, img.width, bar_height], fill=(10, 10, 10))
+        draw.rectangle([0, img.height - bar_height, img.width, img.height], fill=(10, 10, 10))
+        
+        # Título y lema estéticos
+        draw.text((30, 25), "AI CAMERA STUDIO — FOTOS CON IMAGINACIÓN", fill=(200, 200, 200))
+        
+        # Estampar la petición abierta del usuario en la parte inferior
+        display_prompt = f"Idea: {prompt}"
+        # Recortar texto si es muy largo visualmente
+        if len(display_prompt) > 85:
+            display_prompt = display_prompt[:82] + "..."
             
-            # 3. FUSIÓN INTELIGENTE: Unir tu foto real con el fondo de la IA
-            bg_img = Image.open(bg_temp).convert("RGB")
-            user_img = Image.open(input_path).convert("RGB")
-            
-            # Redimensionar tu foto para que encaje perfectamente como elemento principal integrado
-            user_img.thumbnail((450, 450))
-            
-            # Añadir un marco elegante estilo "fotografía impresa" a tu foto
-            user_framed = ImageOps.expand(user_img, border=12, fill='white')
-            
-            # Calcular posición (esquina inferior derecha del fondo generado)
-            position = (bg_img.width - user_framed.width - 50, bg_img.height - user_framed.height - 50)
-            
-            # Pegar tu foto sobre la escena creada por la IA
-            bg_img.paste(user_framed, position)
-            bg_img.save(output_path, "JPEG", quality=95)
-            
-            print("✅ ¡Fusión completada! Tu foto y la IA unidas con éxito.")
-            return FileResponse(output_path, media_type="image/jpeg")
-            
-        else:
-            raise Exception("El servidor de IA no respondió al fondo.")
-
+        draw.text((30, img.height - 60), display_prompt, fill=(255, 215, 0)) # Tono dorado creativo
+        
+        # Guardar imagen procesada de salida
+        output_filename = f"processed_{input_filename}"
+        output_path = os.path.join(PROCESSED_DIR, output_filename)
+        img.save(output_path, quality=95)
+        
+        return FileResponse(output_path, media_type="image/jpeg", filename="foto_imaginacion.jpg")
+        
     except Exception as e:
-        print(f"⚠️ Aviso: {e}. Aplicando respaldo fotográfico local...")
-        
-        # Respaldo de emergencia si falla la red externa
-        try:
-            img = Image.open(input_path).convert("RGB")
-            img_final = ImageOps.expand(img, border=30, fill='deepskyblue')
-            img_final.save(output_path, "JPEG")
-            return FileResponse(output_path, media_type="image/jpeg")
-        except Exception as backup_error:
-            raise HTTPException(status_code=500, detail=str(backup_error))
+        raise HTTPException(status_code=500, detail=str(e))
 
-    finally:
-        # Limpieza de archivos temporales internos
-        for path in [input_path, bg_temp]:
-            if os.path.exists(path):
-                try:
-                    os.remove(path)
-                except:
-                    pass
+@app.get("/")
+def root():
+    return {"status": "AI Camera Studio Backend is running active."}
